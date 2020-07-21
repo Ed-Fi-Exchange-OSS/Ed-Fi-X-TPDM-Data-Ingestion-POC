@@ -1,21 +1,14 @@
 package org.edfi.sis.service;
 
+import com.google.gson.annotations.SerializedName;
 import com.opencsv.RFC4180Parser;
 import org.apache.commons.lang3.StringUtils;
 import org.edfi.api.ApiClient;
 import org.edfi.api.ApiException;
-import org.edfi.api.descriptor.AcademicSubjectDescriptorsApi;
-import org.edfi.api.descriptor.GradeLevelDescriptorsApi;
-import org.edfi.api.descriptor.SexDescriptorsApi;
-import org.edfi.api.descriptor.TppDegreeTypeDescriptorsApi;
+import org.edfi.api.descriptor.*;
 import org.edfi.api.resource.TeacherCandidatesApi;
-import org.edfi.model.descriptor.EdFiAcademicSubjectDescriptor;
-import org.edfi.model.descriptor.EdFiGradeLevelDescriptor;
-import org.edfi.model.descriptor.EdFiSexDescriptor;
-import org.edfi.model.descriptor.TpdmTppDegreeTypeDescriptor;
-import org.edfi.model.resource.EdFiStudentReference;
-import org.edfi.model.resource.TpdmTeacherCandidate;
-import org.edfi.model.resource.TpdmTeacherCandidateTPPProgramDegree;
+import org.edfi.model.descriptor.*;
+import org.edfi.model.resource.*;
 import org.edfi.sis.api.TokenRetriever;
 import org.edfi.sis.dao.Dao;
 import org.edfi.sis.model.SisConnectorResponse;
@@ -57,8 +50,13 @@ public class SisConnectorService {
     @Value( "${output.dir}" )
     String outputDirectory;
 
+    public static final String TEACHER_CANDIDATE_IDS_SQL_NAME = "teacherCandidateIds";
     public static final String TEACHER_CANDIDATE_SQL_NAME = "teacherCandidate";
+    public static final String TEACHER_CANDIDATE_ADDRESSES_SQL_NAME = "teacherCandidateAddresses";
 
+    Map<String, EdFiAddressTypeDescriptor> addressTypeDescriptorMap = null;
+    Map<String, EdFiLocaleDescriptor> localeDescriptorMap = null;
+    Map<String, EdFiStateAbbreviationDescriptor> stateAbbreviationDescriptorMap = null;
     Map<String, EdFiAcademicSubjectDescriptor> academicSubjectDescriptorMap = null;
     Map<String, EdFiGradeLevelDescriptor> gradeLevelDescriptorMap = null;
     Map<String, TpdmTppDegreeTypeDescriptor> tppDegreeTypeDescriptorMap = null;
@@ -115,67 +113,32 @@ public class SisConnectorService {
 
     private void initializeMaps() throws AuthenticationException, ApiException {
         sqlMap = loadSqlMap();
+        columnsMap = loadColumnsMap();
+        addressTypeDescriptorMap = loadAddressTypeDescriptorsMap();
+        localeDescriptorMap = loadLocaleDescriptorsMap();
+        stateAbbreviationDescriptorMap = loadStateAbbreviationDescriptorsMap();
         academicSubjectDescriptorMap = loadAcademicSubjectDescriptorsMap();
         gradeLevelDescriptorMap = loadGradeLevelDescriptorsMap();
         tppDegreeTypeDescriptorMap = loadTppDegreeTypeDescriptorsMap();
         sexDescriptorMap = loadSexDescriptorsMap();
-        columnsMap = loadColumnsMap();
         existingTeacherCandidateMap = loadExistingTeacherCandidateMap();
     }
 
     private void processTeacherCandidate(SisConnectorResponse response) throws AuthenticationException, ApiException {
-        boolean firstRow = true;
-        int teacherCandidateIdIndex = 0;
-        int firstNameIndex = 0;
-        int middleNameIndex = 0;
-        int lastNameIndex = 0;
-        int birthDateIndex = 0;
-        int academicSubjectDescriptorIndex = 0;
-        int gradeLevelDescriptorIndex = 0;
-        int tppDegreeTypeDescriptorIndex = 0;
-        int studentUniqueIdIndex = 0;
-        int sexIndex = 0;
         int upsertCount = 0;
 
-        List<List<String>> result = dao.makeSqlCall(sqlMap.get(TEACHER_CANDIDATE_SQL_NAME));
-        for (List<String> row : result) {
-            if (firstRow) {
-                int currentIndex = 0;
-                for (String header : row) {
-                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("teacherCandidateId"))) {
-                        teacherCandidateIdIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("firstName"))) {
-                        firstNameIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("lastName"))) {
-                        lastNameIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("birthDate"))) {
-                        birthDateIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("academicSubjectDescriptor"))) {
-                        academicSubjectDescriptorIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("gradeLevelDescriptor"))) {
-                        gradeLevelDescriptorIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("tppDegreeTypeDescriptor"))) {
-                        tppDegreeTypeDescriptorIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("studentUniqueId"))) {
-                        studentUniqueIdIndex = currentIndex;
-                    } else if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get("teacherCandidate").get("sex"))) {
-                        sexIndex = currentIndex;
-                    }
-                    currentIndex++;
-                }
-                firstRow = false;
-            } else {
-                TpdmTeacherCandidate teacherCandidate = createTeacherCandidate(row.get(teacherCandidateIdIndex), row.get(firstNameIndex),
-                        row.get(lastNameIndex), row.get(birthDateIndex), row.get(academicSubjectDescriptorIndex),
-                        row.get(gradeLevelDescriptorIndex), row.get(tppDegreeTypeDescriptorIndex),
-                        row.get(studentUniqueIdIndex), row.get(sexIndex));
-                try {
-                    saveTeacherCandidate(teacherCandidate);
-                    existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
-                    upsertCount++;
-                } catch (ApiException ae) {
-                    response.addError(teacherCandidate.toString() + String.format("%n") + ae.getResponseBody());
-                }
+        List<String> studentUniqueIds = retrieveStudentUniqueIds();
+
+        for (String studentUniqueId : studentUniqueIds) {
+            TpdmTeacherCandidate teacherCandidate = retrieveTeacherCandidate(studentUniqueId);
+            List<TpdmTeacherCandidateAddress> teacherCandidateAddresses = retrieveTeacherCandidateAddresses(studentUniqueId);
+            teacherCandidate.setAddresses(teacherCandidateAddresses);
+            try {
+                saveTeacherCandidate(teacherCandidate);
+                existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
+                upsertCount++;
+            } catch (ApiException ae) {
+                response.addError(teacherCandidate.toString() + String.format("%n") + ae.getResponseBody());
             }
         }
         response.setUpsertCount(upsertCount);
@@ -195,6 +158,184 @@ public class SisConnectorService {
                 throw ae;
             }
         }
+    }
+
+    private List<String> retrieveStudentUniqueIds() {
+        boolean firstRow = true;
+        int studentUniqueIdIndex = 0;
+        List<String> studentUniqueIds = new ArrayList<>();
+
+        List<List<String>> result = dao.makeSqlCall(sqlMap.get(TEACHER_CANDIDATE_IDS_SQL_NAME));
+        for (List<String> row : result) {
+            if (firstRow) {
+                int currentIndex = 0;
+                for (String header : row) {
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_IDS_SQL_NAME).get("studentUniqueId"))) {
+                        studentUniqueIdIndex = currentIndex;
+                    }
+                    currentIndex++;
+                }
+                firstRow = false;
+            } else {
+                studentUniqueIds.add(row.get(studentUniqueIdIndex));
+            }
+        }
+        return studentUniqueIds;
+    }
+
+    private TpdmTeacherCandidate retrieveTeacherCandidate(String studentUniqueId) {
+        boolean firstRow = true;
+        int teacherCandidateIdIndex = 0;
+        int firstNameIndex = 0;
+        int middleNameIndex = 0;
+        int lastNameIndex = 0;
+        int birthDateIndex = 0;
+        int academicSubjectDescriptorIndex = 0;
+        int gradeLevelDescriptorIndex = 0;
+        int tppDegreeTypeDescriptorIndex = 0;
+        int studentUniqueIdIndex = 0;
+        int sexIndex = 0;
+
+        TpdmTeacherCandidate teacherCandidate = null;
+
+        List<List<String>> result = dao.makeSqlCall(sqlMap.get(TEACHER_CANDIDATE_SQL_NAME), studentUniqueId);
+        for (List<String> row : result) {
+            if (firstRow) {
+                int currentIndex = 0;
+                for (String header : row) {
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("teacherCandidateId"))) {
+                        teacherCandidateIdIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("firstName"))) {
+                        firstNameIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("lastName"))) {
+                        lastNameIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("birthDate"))) {
+                        birthDateIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("academicSubjectDescriptor"))) {
+                        academicSubjectDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("gradeLevelDescriptor"))) {
+                        gradeLevelDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("tppDegreeTypeDescriptor"))) {
+                        tppDegreeTypeDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("studentUniqueId"))) {
+                        studentUniqueIdIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get("teacherCandidate").get("sex"))) {
+                        sexIndex = currentIndex;
+                    }
+                    currentIndex++;
+                }
+                firstRow = false;
+            } else {
+                teacherCandidate = createTeacherCandidate(row.get(teacherCandidateIdIndex), row.get(firstNameIndex),
+                        row.get(lastNameIndex), row.get(birthDateIndex), row.get(academicSubjectDescriptorIndex),
+                        row.get(gradeLevelDescriptorIndex), row.get(tppDegreeTypeDescriptorIndex),
+                        row.get(studentUniqueIdIndex), row.get(sexIndex));
+            }
+        }
+        return teacherCandidate;
+    }
+
+    private List<TpdmTeacherCandidateAddress> retrieveTeacherCandidateAddresses (String studentUniqueId) {
+        boolean firstRow = true;
+        int addressTypeDescriptorIndex = 0;
+        int localDescriptorIndex = 0;
+        int stateAbbreviationDescriptorIndex = 0;
+        int apartmentRoomSuiteNumberIndex = 0;
+        int buildingSiteNumberIndex = 0;
+        int cityIndex = 0;
+        int congressionalDistrictIndex = 0;
+        int countyFIPSCodeIndex = 0;
+        int doNotPublishIndicatorIndex = 0;
+        int nameOfCountyIndex = 0;
+        int postalCodeIndex = 0;
+        int streetNumberNameIndex = 0;
+        int periodBeginDateIndex = 0;
+        int periodEndDateIndex = 0;
+
+        List<TpdmTeacherCandidateAddress> teacherCandidateAddresses = new ArrayList<>();
+
+        List<List<String>> result = dao.makeSqlCall(sqlMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME),studentUniqueId);
+        for (List<String> row : result) {
+            if (firstRow) {
+                int currentIndex = 0;
+                for (String header : row) {
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("addressTypeDescriptor"))) {
+                        addressTypeDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("localDescriptor"))) {
+                        localDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("stateAbbreviationDescriptor"))) {
+                        stateAbbreviationDescriptorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("apartmentRoomSuiteNumber"))) {
+                        apartmentRoomSuiteNumberIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("buildingSiteNumber"))) {
+                        buildingSiteNumberIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("city"))) {
+                        cityIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("congressionalDistrict"))) {
+                        congressionalDistrictIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("countyFIPSCode"))) {
+                        countyFIPSCodeIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("doNotPublishIndicator"))) {
+                        doNotPublishIndicatorIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("nameOfCounty"))) {
+                        nameOfCountyIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("postalCode"))) {
+                        postalCodeIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("streetNumberName"))) {
+                        streetNumberNameIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("periodBeginDate"))) {
+                        periodBeginDateIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_ADDRESSES_SQL_NAME).get("periodEndDate"))) {
+                        periodEndDateIndex = currentIndex;
+                    }
+                    currentIndex++;
+                }
+                firstRow = false;
+            } else {
+                TpdmTeacherCandidateAddress teacherCandidateAddress = createTeacherCandidateAddress(row.get(addressTypeDescriptorIndex),
+                        row.get(localDescriptorIndex), row.get(stateAbbreviationDescriptorIndex),
+                        row.get(apartmentRoomSuiteNumberIndex), row.get(buildingSiteNumberIndex), row.get(cityIndex),
+                        row.get(congressionalDistrictIndex), row.get(countyFIPSCodeIndex), row.get(doNotPublishIndicatorIndex),
+                        row.get(nameOfCountyIndex), row.get(postalCodeIndex), row.get(streetNumberNameIndex), row.get(periodBeginDateIndex),
+                        row.get(periodEndDateIndex));
+                addTeacherAddress(teacherCandidateAddresses, teacherCandidateAddress);
+            }
+        }
+        return teacherCandidateAddresses;
+    }
+
+    private void addTeacherAddress(List<TpdmTeacherCandidateAddress> list, TpdmTeacherCandidateAddress newAddress) {
+        for (TpdmTeacherCandidateAddress address: list) {
+            if (address.getStreetNumberName().equals(newAddress.getStreetNumberName()) &&
+                    address.getCity().equals(newAddress.getCity()) &&
+                    address.getStateAbbreviationDescriptor().equals(newAddress.getStateAbbreviationDescriptor()) &&
+                    address.getPostalCode().equals(newAddress.getPostalCode()) ) {
+                address.getPeriods().add(newAddress.getPeriods().get(0));
+                return;
+            }
+        }
+        list.add(newAddress);
     }
 
     private TpdmTeacherCandidate createTeacherCandidate(String teacherCandidateId, String firstName, String lastName, String birthDate,
@@ -221,6 +362,33 @@ public class SisConnectorService {
         return teacherCandidate;
     }
 
+    private TpdmTeacherCandidateAddress createTeacherCandidateAddress(String addressTypeDescriptor, String localDescriptor,
+                String stateAbbreviationDescriptor, String apartmentRoomSuiteNumber, String buildingSiteNumber, String city,
+                String congressionalDistrict, String countyFIPSCode, String doNotPublishIndicator, String nameOfCounty,
+                String postalCode, String streetNumberName, String periodBeginDate, String periodEndDate) {
+
+        TpdmTeacherCandidateAddress address = new TpdmTeacherCandidateAddress();
+        address.setAddressTypeDescriptor(getAddressTypeDescriptorUri(addressTypeDescriptor));
+        address.setLocaleDescriptor(getLocaleDescriptorUri(localDescriptor));
+        address.stateAbbreviationDescriptor(getStateAbbreviationDescriptorUri(stateAbbreviationDescriptor));
+        address.setApartmentRoomSuiteNumber(apartmentRoomSuiteNumber);
+        address.setBuildingSiteNumber(buildingSiteNumber);
+        address.setCity(city);
+        address.setCongressionalDistrict(congressionalDistrict);
+        address.setCountyFIPSCode(countyFIPSCode);
+        address.setDoNotPublishIndicator(Boolean.valueOf(doNotPublishIndicator));
+        address.setNameOfCounty(nameOfCounty);
+        address.setPostalCode(postalCode);
+        address.setStreetNumberName(streetNumberName);
+        TpdmTeacherCandidateAddressPeriod period = new TpdmTeacherCandidateAddressPeriod();
+        period.setBeginDate(LocalDate.parse(periodBeginDate));
+        period.setEndDate(LocalDate.parse(periodEndDate));
+        List<TpdmTeacherCandidateAddressPeriod> periods = new ArrayList<>();
+        periods.add(period);
+        address.periods(periods);
+        return address;
+    }
+
     private void removeDeletedTeacherCandidates(SisConnectorResponse response)  throws ApiException, AuthenticationException {
         int deleteCount = 0;
         for (String key : existingTeacherCandidateMap.keySet()) {
@@ -245,6 +413,93 @@ public class SisConnectorService {
         }
     }
 
+    private Map<String, EdFiAddressTypeDescriptor> loadAddressTypeDescriptorsMap() throws ApiException, AuthenticationException {
+        List<EdFiAddressTypeDescriptor> list = null;
+        try {
+            AddressTypeDescriptorsApi addressTypeDescriptorsApi = new AddressTypeDescriptorsApi(apiClient);
+            list = addressTypeDescriptorsApi.getAddressTypeDescriptors(0, 100, false, null);
+        } catch (ApiException ae) {
+            if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                AddressTypeDescriptorsApi addressTypeDescriptorsApi = new AddressTypeDescriptorsApi(apiClient);
+                list = addressTypeDescriptorsApi.getAddressTypeDescriptors(0, 100, false, null);
+            } else {
+                throw ae;
+            }
+        }
+        Map<String, EdFiAddressTypeDescriptor> map = new HashMap<>();
+        for (EdFiAddressTypeDescriptor addressTypeDescriptor : list) {
+            map.put(addressTypeDescriptor.getCodeValue(), addressTypeDescriptor);
+        }
+        return map;
+    }
+
+    private String getAddressTypeDescriptorUri (String code) {
+        EdFiAddressTypeDescriptor addressTypeDescriptor = addressTypeDescriptorMap.get(code);
+        if (addressTypeDescriptor!=null) {
+            return addressTypeDescriptor.getNamespace() + "#" + code;
+        }
+        return code;
+    }
+
+    private Map<String, EdFiLocaleDescriptor> loadLocaleDescriptorsMap() throws ApiException, AuthenticationException {
+        List<EdFiLocaleDescriptor> list = null;
+        try {
+            LocaleDescriptorsApi localeDescriptorsApi = new LocaleDescriptorsApi(apiClient);
+            list = localeDescriptorsApi.getLocaleDescriptors(0, 100, false, null);
+        } catch (ApiException ae) {
+            if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                LocaleDescriptorsApi localeDescriptorsApi = new LocaleDescriptorsApi(apiClient);
+                list = localeDescriptorsApi.getLocaleDescriptors(0, 100, false, null);
+            } else {
+                throw ae;
+            }
+        }
+        Map<String, EdFiLocaleDescriptor> map = new HashMap<>();
+        for (EdFiLocaleDescriptor localeDescriptor : list) {
+            map.put(localeDescriptor.getCodeValue(), localeDescriptor);
+        }
+        return map;
+    }
+
+    private String getLocaleDescriptorUri (String code) {
+        EdFiLocaleDescriptor localeDescriptor = localeDescriptorMap.get(code);
+        if (localeDescriptor!=null) {
+            return localeDescriptor.getNamespace() + "#" + code;
+        }
+        return code;
+    }
+
+    private Map<String, EdFiStateAbbreviationDescriptor> loadStateAbbreviationDescriptorsMap() throws ApiException, AuthenticationException {
+        List<EdFiStateAbbreviationDescriptor> list = null;
+        try {
+            StateAbbreviationDescriptorsApi stateAbbreviationDescriptorsApi = new StateAbbreviationDescriptorsApi(apiClient);
+            list = stateAbbreviationDescriptorsApi.getStateAbbreviationDescriptors(0, 100, false, null);
+        } catch (ApiException ae) {
+            if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                StateAbbreviationDescriptorsApi stateAbbreviationDescriptorsApi = new StateAbbreviationDescriptorsApi(apiClient);
+                list = stateAbbreviationDescriptorsApi.getStateAbbreviationDescriptors(0, 100, false, null);
+            } else {
+                throw ae;
+            }
+        }
+        Map<String, EdFiStateAbbreviationDescriptor> map = new HashMap<>();
+        for (EdFiStateAbbreviationDescriptor stateAbbreviationDescriptor : list) {
+            map.put(stateAbbreviationDescriptor.getCodeValue(), stateAbbreviationDescriptor);
+        }
+        return map;
+    }
+
+    private String getStateAbbreviationDescriptorUri (String code) {
+        EdFiStateAbbreviationDescriptor stateAbbreviationDescriptor = stateAbbreviationDescriptorMap.get(code);
+        if (stateAbbreviationDescriptor!=null) {
+            return stateAbbreviationDescriptor.getNamespace() + "#" + code;
+        }
+        return code;
+    }
+
     private Map<String, EdFiAcademicSubjectDescriptor> loadAcademicSubjectDescriptorsMap() throws ApiException, AuthenticationException {
         List<EdFiAcademicSubjectDescriptor> list = null;
         try {
@@ -265,6 +520,7 @@ public class SisConnectorService {
         }
         return map;
     }
+
     private String getAcademicSubjectDescriptorUri (String code) {
         EdFiAcademicSubjectDescriptor academicSubjectDescriptor = academicSubjectDescriptorMap.get(code);
         if (academicSubjectDescriptor!=null) {

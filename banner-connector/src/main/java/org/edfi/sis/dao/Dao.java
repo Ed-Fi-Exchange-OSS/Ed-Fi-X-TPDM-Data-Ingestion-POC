@@ -74,6 +74,45 @@ public class Dao {
         return result;
     }
 
+
+    public List<List<String>> makeSqlCall(String sql, String id) {
+        PreparedStatement ps = null;
+        List<List<String>> result = new ArrayList<>();
+
+        try {
+            ps = getConnection().prepareStatement(sql);
+            ps.setString(1, id);
+            ResultSet resultSet = ps.executeQuery();
+
+            int columnCount = resultSet.getMetaData().getColumnCount();
+
+            //Add the column headers
+            List<String> headerRow = new ArrayList<>();
+            for (int i = 1; i <= columnCount; i++) {
+                headerRow.add(resultSet.getMetaData().getColumnName(i));
+            }
+            result.add(headerRow);
+
+            while (resultSet.next()) {
+                List<String> dataRow = new ArrayList<>();
+
+                for (int i = 1; i <= columnCount; i++) {
+                    if (resultSet.getObject(i) != null) {
+                        String data = resultSet.getObject(i).toString();
+                        dataRow.add(data);
+                    } else {
+                        String data = "[null]";
+                        dataRow.add(data);
+                    }
+                }
+                result.add(dataRow);
+            }
+        } catch (SQLException e) {
+            logger.error(e.getMessage());
+        }
+        return result;
+    }
+
     public String getUrl() {
         return url;
     }
