@@ -50,6 +50,9 @@ public class SisConnectorService {
     @Value( "${output.dir}" )
     String outputDirectory;
 
+    @Value( "${tpdm.api.save}" )
+    boolean saveToTPDM;
+
     public static final String TEACHER_CANDIDATE_IDS_SQL_NAME = "teacherCandidateIds";
     public static final String TEACHER_CANDIDATE_SQL_NAME = "teacherCandidate";
     public static final String TEACHER_CANDIDATE_ADDRESSES_SQL_NAME = "teacherCandidateAddresses";
@@ -147,7 +150,9 @@ public class SisConnectorService {
     private void saveTeacherCandidate(TpdmTeacherCandidate teacherCandidate) throws AuthenticationException, ApiException {
         try {
             TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
-            teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
+            if (saveToTPDM) {
+                teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
+            }
             existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
         } catch (ApiException ae) {
             if (ae.getCode()==(HttpStatus.UNAUTHORIZED.value())) {
