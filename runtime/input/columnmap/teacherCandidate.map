@@ -1,0 +1,9 @@
+teacherCandidateId=SPRIDEN_PIDM
+firstName=SPRIDEN_FIRST_NAME
+lastName=SPRIDEN_LAST_NAME
+birthDate=SPBPERS_BIRTH_DATE
+academicSubjectDescriptor=academic_subject_descriptor
+gradeLevelDescriptor=grade_level_descriptor
+tppDegreeTypeDescriptor=tpp_degree_type_descriptor
+studentUniqueId=SPRIDEN_PIDM
+sex=SPBPERS_SEX

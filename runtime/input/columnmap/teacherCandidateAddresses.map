@@ -1,0 +1,14 @@
+addressTypeDescriptor=SPRADDR_ATYP_CODE
+localDescriptor=locale_descriptor
+stateAbbreviationDescriptor=SPRADDR_STAT_CODE
+apartmentRoomSuiteNumber=apartment_room_suite_number
+buildingSiteNumber=building_site_number
+city=SPRADDR_CITY
+congressionalDistrict=congressional_district
+countyFIPSCode=county_fips_code
+doNotPublishIndicator=do_not_publish_ind
+nameOfCounty=name_of_county
+postalCode=SPRADDR_ZIP
+streetNumberName=SPRADDR_STREET_LINE1
+periodBeginDate=SPRADDR_FROM_DATE
+periodEndDate=SPRADDR_TO_DATE
