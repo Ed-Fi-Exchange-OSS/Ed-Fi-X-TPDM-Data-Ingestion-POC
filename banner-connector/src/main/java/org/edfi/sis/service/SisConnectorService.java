@@ -53,6 +53,12 @@ public class SisConnectorService {
     @Value( "${tpdm.api.save}" )
     boolean saveToTPDM;
 
+    @Value( "${output.data.to.dir}" )
+    boolean outputDataToDir;
+
+    String nowDate = null;
+    String nowTime = null;
+
     public static final String TEACHER_CANDIDATE_IDS_SQL_NAME = "teacherCandidateIds";
     public static final String TEACHER_CANDIDATE_SQL_NAME = "teacherCandidate";
     public static final String TEACHER_CANDIDATE_ADDRESSES_SQL_NAME = "teacherCandidateAddresses";
@@ -80,6 +86,12 @@ public class SisConnectorService {
         response.setStartTime(startTime);
         try {
             apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+
+            DateTimeFormatter formatDate = DateTimeFormat.forPattern("YYYYMMdd");
+            DateTimeFormatter formatTime = DateTimeFormat.forPattern("HHmmss");
+            DateTime dateTime = DateTime.now();
+            nowDate = dateTime.toString(formatDate);
+            nowTime = dateTime.toString(formatTime);
 
             initializeMaps();
 
@@ -148,19 +160,39 @@ public class SisConnectorService {
     }
 
     private void saveTeacherCandidate(TpdmTeacherCandidate teacherCandidate) throws AuthenticationException, ApiException {
-        try {
-            TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
-            if (saveToTPDM) {
-                teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
-            }
-            existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
-        } catch (ApiException ae) {
-            if (ae.getCode()==(HttpStatus.UNAUTHORIZED.value())) {
-                apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+        if (saveToTPDM) {
+            try {
                 TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
                 teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
-            } else {
-                throw ae;
+                existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
+            } catch (ApiException ae) {
+                if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                    apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                    TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
+                    teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
+                } else {
+                    throw ae;
+                }
+            }
+        }
+        if (outputDataToDir) {
+            BufferedWriter writer = null;
+            try {
+                String fileName = getOutputDirectory() + "/" + nowDate + "/" +  nowTime + "/" +
+                        teacherCandidate.getStudentReference().getStudentUniqueId() + ".out";
+                File file = new File(fileName);
+                file.getParentFile().mkdirs();
+                writer = new BufferedWriter(new FileWriter(file));
+                writer.write(teacherCandidate.toString());
+            }
+            catch ( IOException e) {
+                String error = "";
+            } finally {
+                try {
+                    if ( writer != null)
+                        writer.close( );
+                } catch ( IOException e) {
+                }
             }
         }
     }
@@ -190,16 +222,16 @@ public class SisConnectorService {
 
     private TpdmTeacherCandidate retrieveTeacherCandidate(String studentUniqueId) {
         boolean firstRow = true;
-        int teacherCandidateIdIndex = 0;
-        int firstNameIndex = 0;
-        int middleNameIndex = 0;
-        int lastNameIndex = 0;
-        int birthDateIndex = 0;
-        int academicSubjectDescriptorIndex = 0;
-        int gradeLevelDescriptorIndex = 0;
-        int tppDegreeTypeDescriptorIndex = 0;
-        int studentUniqueIdIndex = 0;
-        int sexIndex = 0;
+        int teacherCandidateIdIndex = -1;
+        int firstNameIndex = -1;
+        int middleNameIndex = -1;
+        int lastNameIndex = -1;
+        int birthDateIndex = -1;
+        int academicSubjectDescriptorIndex = -1;
+        int gradeLevelDescriptorIndex = -1;
+        int tppDegreeTypeDescriptorIndex = -1;
+        int studentUniqueIdIndex = -1;
+        int sexIndex = -1;
 
         TpdmTeacherCandidate teacherCandidate = null;
 
@@ -213,6 +245,9 @@ public class SisConnectorService {
                     }
                     if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("firstName"))) {
                         firstNameIndex = currentIndex;
+                    }
+                    if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("middleName"))) {
+                        middleNameIndex = currentIndex;
                     }
                     if (StringUtils.equalsAnyIgnoreCase(header, columnsMap.get(TEACHER_CANDIDATE_SQL_NAME).get("lastName"))) {
                         lastNameIndex = currentIndex;
@@ -239,10 +274,20 @@ public class SisConnectorService {
                 }
                 firstRow = false;
             } else {
-                teacherCandidate = createTeacherCandidate(row.get(teacherCandidateIdIndex), row.get(firstNameIndex),
-                        row.get(lastNameIndex), row.get(birthDateIndex), row.get(academicSubjectDescriptorIndex),
-                        row.get(gradeLevelDescriptorIndex), row.get(tppDegreeTypeDescriptorIndex),
-                        row.get(studentUniqueIdIndex), row.get(sexIndex));
+                String teacherCandidateId = getString(teacherCandidateIdIndex, row);
+                String firstName = getString(firstNameIndex, row);
+                String middleName = getString(middleNameIndex, row);
+                String lastName = getString(lastNameIndex, row);
+                String birthDate = getString(birthDateIndex, row);
+                String academicSubjectDescriptor = getString(academicSubjectDescriptorIndex, row);
+                String gradeLevelDescriptor = getString(gradeLevelDescriptorIndex, row);
+                String tppDegreeTypeDescriptor = getString(tppDegreeTypeDescriptorIndex, row);
+                String studentId = getString(studentUniqueIdIndex, row);
+                String sex = getString(sexIndex, row);
+
+                teacherCandidate = createTeacherCandidate(teacherCandidateId, firstName, middleName, lastName,
+                        birthDate, academicSubjectDescriptor, gradeLevelDescriptor, tppDegreeTypeDescriptor,
+                        studentId, sex);
             }
         }
         return teacherCandidate;
@@ -250,20 +295,20 @@ public class SisConnectorService {
 
     private List<TpdmTeacherCandidateAddress> retrieveTeacherCandidateAddresses (String studentUniqueId) {
         boolean firstRow = true;
-        int addressTypeDescriptorIndex = 0;
-        int localDescriptorIndex = 0;
-        int stateAbbreviationDescriptorIndex = 0;
-        int apartmentRoomSuiteNumberIndex = 0;
-        int buildingSiteNumberIndex = 0;
-        int cityIndex = 0;
-        int congressionalDistrictIndex = 0;
-        int countyFIPSCodeIndex = 0;
-        int doNotPublishIndicatorIndex = 0;
-        int nameOfCountyIndex = 0;
-        int postalCodeIndex = 0;
-        int streetNumberNameIndex = 0;
-        int periodBeginDateIndex = 0;
-        int periodEndDateIndex = 0;
+        int addressTypeDescriptorIndex = -1;
+        int localDescriptorIndex = -1;
+        int stateAbbreviationDescriptorIndex = -1;
+        int apartmentRoomSuiteNumberIndex = -1;
+        int buildingSiteNumberIndex = -1;
+        int cityIndex = -1;
+        int congressionalDistrictIndex = -1;
+        int countyFIPSCodeIndex = -1;
+        int doNotPublishIndicatorIndex = -1;
+        int nameOfCountyIndex = -1;
+        int postalCodeIndex = -1;
+        int streetNumberNameIndex = -1;
+        int periodBeginDateIndex = -1;
+        int periodEndDateIndex = -1;
 
         List<TpdmTeacherCandidateAddress> teacherCandidateAddresses = new ArrayList<>();
 
@@ -318,12 +363,25 @@ public class SisConnectorService {
                 }
                 firstRow = false;
             } else {
-                TpdmTeacherCandidateAddress teacherCandidateAddress = createTeacherCandidateAddress(row.get(addressTypeDescriptorIndex),
-                        row.get(localDescriptorIndex), row.get(stateAbbreviationDescriptorIndex),
-                        row.get(apartmentRoomSuiteNumberIndex), row.get(buildingSiteNumberIndex), row.get(cityIndex),
-                        row.get(congressionalDistrictIndex), row.get(countyFIPSCodeIndex), row.get(doNotPublishIndicatorIndex),
-                        row.get(nameOfCountyIndex), row.get(postalCodeIndex), row.get(streetNumberNameIndex), row.get(periodBeginDateIndex),
-                        row.get(periodEndDateIndex));
+                String addressTypeDescriptor = getString(addressTypeDescriptorIndex, row);
+                String localDescriptor = getString(localDescriptorIndex, row);
+                String stateAbbreviationDescriptor = getString(stateAbbreviationDescriptorIndex, row);
+                String apartmentRoomSuiteNumber = getString(apartmentRoomSuiteNumberIndex, row);
+                String buildingSiteNumber = getString(buildingSiteNumberIndex, row);
+                String city = getString(cityIndex, row);
+                String congressionalDistrict = getString(congressionalDistrictIndex, row);
+                String countyFIPSCode = getString(countyFIPSCodeIndex, row);
+                String doNotPublishIndicator = getString(doNotPublishIndicatorIndex, row);
+                String nameOfCounty = getString(nameOfCountyIndex, row);
+                String postalCode = getString(postalCodeIndex, row);
+                String streetNumberName = getString(streetNumberNameIndex, row);
+                String periodBeginDate = getString(periodBeginDateIndex, row);
+                String periodEndDate = getString(periodEndDateIndex, row);
+
+                TpdmTeacherCandidateAddress teacherCandidateAddress = createTeacherCandidateAddress(
+                        addressTypeDescriptor, localDescriptor, stateAbbreviationDescriptor, apartmentRoomSuiteNumber,
+                        buildingSiteNumber, city, congressionalDistrict, countyFIPSCode, doNotPublishIndicator,
+                        nameOfCounty, postalCode, streetNumberName, periodBeginDate, periodEndDate);
                 addTeacherAddress(teacherCandidateAddresses, teacherCandidateAddress);
             }
         }
@@ -336,6 +394,11 @@ public class SisConnectorService {
                     address.getCity().equals(newAddress.getCity()) &&
                     address.getStateAbbreviationDescriptor().equals(newAddress.getStateAbbreviationDescriptor()) &&
                     address.getPostalCode().equals(newAddress.getPostalCode()) ) {
+                for (TpdmTeacherCandidateAddressPeriod period : address.getPeriods()) {
+                    if (newAddress.getPeriods().get(0).equals(period)){
+                        return;
+                    }
+                }
                 address.getPeriods().add(newAddress.getPeriods().get(0));
                 return;
             }
@@ -343,13 +406,15 @@ public class SisConnectorService {
         list.add(newAddress);
     }
 
-    private TpdmTeacherCandidate createTeacherCandidate(String teacherCandidateId, String firstName, String lastName, String birthDate,
-                                                        String academicSubject, String gradeLevel, String degreeType,
-                                                        String studentId, String sex) {
+    private TpdmTeacherCandidate createTeacherCandidate(String teacherCandidateId, String firstName, String middleName,
+                                                        String lastName, String birthDate, String academicSubject,
+                                                        String gradeLevel, String degreeType, String studentId,
+                                                        String sex) {
         TpdmTeacherCandidate teacherCandidate = new TpdmTeacherCandidate();
         teacherCandidate.setTeacherCandidateIdentifier(teacherCandidateId);
         teacherCandidate.setFirstName(firstName);
         teacherCandidate.setLastSurname(lastName);
+        teacherCandidate.setMiddleName(middleName);
         teacherCandidate.setBirthDate(LocalDate.parse(birthDate));
 
         TpdmTeacherCandidateTPPProgramDegree degree = new TpdmTeacherCandidateTPPProgramDegree();
@@ -404,16 +469,18 @@ public class SisConnectorService {
     }
 
     private void deleteTeacherCandidate(String id) throws ApiException, AuthenticationException {
-        try {
-            TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
-            teacherCandidatesApi.deleteTeacherCandidateById(id, null);
-        } catch (ApiException ae) {
-            if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
-                apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+        if (saveToTPDM) {
+            try {
                 TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
                 teacherCandidatesApi.deleteTeacherCandidateById(id, null);
-            } else {
-                throw ae;
+            } catch (ApiException ae) {
+                if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                    apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                    TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
+                    teacherCandidatesApi.deleteTeacherCandidateById(id, null);
+                } else {
+                    throw ae;
+                }
             }
         }
     }
@@ -682,10 +749,7 @@ public class SisConnectorService {
     }
 
     private String getOutputFileName () {
-        DateTimeFormatter formatDate = DateTimeFormat.forPattern("YYYYMMdd");
-        DateTime dateTime = DateTime.now();
-        DateTimeFormatter formatHour = DateTimeFormat.forPattern("HHmmss");
-        return getOutputDirectory() + "/" +  dateTime.toString(formatDate) + "-" + dateTime.toString(formatHour) + ".report";
+        return getOutputDirectory() + "/" +  nowDate + "-" + nowTime + ".report";
     }
 
 //    public void process() {
@@ -760,6 +824,14 @@ public class SisConnectorService {
             e.printStackTrace();
         }
         return map;
+    }
+
+    private String getString(int index, List<String> row) {
+        if (index >= 0) {
+            return row.get(index);
+        } else {
+            return null;
+        }
     }
 
     public String getSqlDirectory() {
