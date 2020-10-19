@@ -1,5 +1,6 @@
 teacherCandidateId=SPRIDEN_PIDM
 firstName=SPRIDEN_FIRST_NAME
+middleName=SPRIDEN_MIDDLE_NAME
 lastName=SPRIDEN_LAST_NAME
 birthDate=SPBPERS_BIRTH_DATE
 academicSubjectDescriptor=academic_subject_descriptor
