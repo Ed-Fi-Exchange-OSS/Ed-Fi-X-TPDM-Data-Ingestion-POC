@@ -160,21 +160,6 @@ public class SisConnectorService {
     }
 
     private void saveTeacherCandidate(TpdmTeacherCandidate teacherCandidate) throws AuthenticationException, ApiException {
-        if (saveToTPDM) {
-            try {
-                TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
-                teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
-                existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
-            } catch (ApiException ae) {
-                if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
-                    apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
-                    TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
-                    teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
-                } else {
-                    throw ae;
-                }
-            }
-        }
         if (outputDataToDir) {
             BufferedWriter writer = null;
             try {
@@ -192,6 +177,22 @@ public class SisConnectorService {
                     if ( writer != null)
                         writer.close( );
                 } catch ( IOException e) {
+                }
+            }
+        }
+
+        if (saveToTPDM) {
+            try {
+                TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
+                teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
+                existingTeacherCandidateMap.remove(teacherCandidate.getTeacherCandidateIdentifier());
+            } catch (ApiException ae) {
+                if (ae.getCode() == (HttpStatus.UNAUTHORIZED.value())) {
+                    apiClient.setAccessToken(tokenRetriever.obtainNewBearerToken());
+                    TeacherCandidatesApi teacherCandidatesApi = new TeacherCandidatesApi(apiClient);
+                    teacherCandidatesApi.postTeacherCandidate(teacherCandidate);
+                } else {
+                    throw ae;
                 }
             }
         }
